@@ -3,7 +3,7 @@
 # @Author: Anthony
 # @Date:   2016-02-12 00:02:53
 # @Last Modified by:   Anthony
-# @Last Modified time: 2016-02-19 22:41:25
+# @Last Modified time: 2016-02-19 23:11:30
 
 __version__ = (0,0,0,2)
 
@@ -14,6 +14,22 @@ import json
 import inspect
 import sys
 import session
+import functools
+
+def auth_required(auth_check = lambda x: bool(x)):
+    ''' Decorator for checking authentication '''
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kw):
+            username = self.session.get('username',None)
+            if auth_check(username):
+                return func(self,*args,**kw)
+            else:
+                self.write(json.dumps(dict(error='Authentication required.')))
+                self.set_status(401)
+                return
+        return wrapper
+    return decorator
 
 def config(func, method, path, **kwparams):
     """ Decorator config function """
@@ -119,11 +135,11 @@ class RestHandler(session.SessionHandler):
                     params_values = self._find_params_value_of_url(service_name,request_path) + self._find_params_value_of_arguments(operation)
                     p_values      = self._convert_params_values(params_values)
                     body = str(self.request.body,'utf-8')
-                    self.response_data = None
+                    self.request_data = None
                     if body:
-                        self.response_data = json.loads(body)
+                        self.request_data = json.loads(body)
                     response = operation(*p_values)
-                    self.response_data = None
+                    self.request_data = None
 
                     if response == None:
                         return
@@ -132,7 +148,7 @@ class RestHandler(session.SessionHandler):
                     self.write(json.dumps(response))
                     self.finish()
                 except Exception as detail:
-                    self.response_data = None
+                    self.request_data = None
                     self.gen_http_error(500,"Internal Server Error : %s"%detail)
                     raise
 
