@@ -1,5 +1,10 @@
-import tornado.ioloop
+#/usr/bin/python
+# coding: utf-8
 
+import sys
+sys.path.append("..")
+
+import tornado.ioloop
 import restful
 from restful import get,post,put,delete
 from configs.config import configs
@@ -26,11 +31,11 @@ class SessionService(restful.RestHandler):
     def post_session(self):
         name = self.response_data.get('username')
         password = self.response_data.get('password')
-        if name and password:
-            self.session['username'] = name
-            self.session.save()
-            return self.session
-        return {}
+
+        # Add some authentication here
+        self.session['username'] = name
+        self.session.save()
+        return self.session
 
     @get(path="/session")
     def get_session(self):

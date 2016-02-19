@@ -6,17 +6,43 @@ import hmac
 import ujson
 import hashlib
 import time
+import tornado.web
+
+def dict_merge(defaults, override):
+    '''Merge two dicts into one.'''
+    r = {}
+    for k, v in defaults.items():
+        if k in override:
+            if isinstance(v, dict):
+                r[k] = dict_merge(v, override[k])
+            else:
+                r[k] = override[k]
+        else:
+            r[k] = v
+    return r
+
+class SessionApplication(tornado.web.Application):
+    def __init__(self,user_settings = {}, *args, **kwargs):
+        settings = {
+            'storage':{
+                'agent':'dict'
+            },
+            'session_secret':'3cdcb1f00803b6e78ab50b466a40b9977db396840c28307f428b25e2277f1bcc',
+            'session_timeout':60
+        }
+        settings = dict_merge(settings,user_settings)
+        tornado.web.Application.__init__(self, *args, **kwargs)
+        self.session_manager = SessionManager(settings)
+
+class SessionHandler(tornado.web.RequestHandler):
+    def __init__(self, *argc, **argkw):
+        super().__init__(*argc, **argkw)
+        self.session = Session(self.application.session_manager, self)
 
 class SessionData(dict):
     def __init__(self, session_id, hmac_key):
         self.session_id = session_id
         self.hmac_key = hmac_key
-#    @property
-#    def sid(self):
-#        return self.session_id
-#    @x.setter
-#    def sid(self, value):
-#        self.session_id = value
 
 class Session(SessionData):
     def __init__(self, session_manager, request_handler):
@@ -33,8 +59,8 @@ class Session(SessionData):
         self.session_id = current_session.session_id
         self.hmac_key = current_session.hmac_key
 
-    def save(self):
-        self.session_manager.set(self.request_handler, self)
+    def save(self,timeout = None):
+        self.session_manager.set(self.request_handler, self, timeout)
 
     def clear(self):
         self.session_manager.clear(self.request_handler)
@@ -94,8 +120,10 @@ class SessionManager(object):
             session_id = None
             hmac_key = None
         else:
-            session_id = request_handler.get_secure_cookie("session_id").decode()
-            hmac_key = request_handler.get_secure_cookie("verification").decode()
+            session_id = request_handler.get_secure_cookie("session_id")
+            hmac_key = request_handler.get_secure_cookie("verification")
+            if isinstance(session_id,bytes): session_id = session_id.decode()
+            if isinstance(hmac_key,bytes):   hmac_key = hmac_key.decode()
 
         if session_id == None:
             session_exists = False
@@ -115,13 +143,14 @@ class SessionManager(object):
                 session[key] = data
         return session
 
-    def set(self, request_handler, session):
+    def set(self, request_handler, session, timeout = None):
+        if timeout is None: timeout = self.session_timeout
         request_handler.set_secure_cookie("session_id", session.session_id)
         request_handler.set_secure_cookie("verification", session.hmac_key)
 
         session_data = ujson.dumps(dict(session.items()))
 
-        self.storage['set'](session.session_id, self.session_timeout, session_data)
+        self.storage['set'](session.session_id, timeout, session_data)
 
     def clear(self, request_handler):
         request_handler.clear_cookie("session_id")

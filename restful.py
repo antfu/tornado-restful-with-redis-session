@@ -3,9 +3,9 @@
 # @Author: Anthony
 # @Date:   2016-02-12 00:02:53
 # @Last Modified by:   Anthony
-# @Last Modified time: 2016-02-14 11:45:22
+# @Last Modified time: 2016-02-19 22:41:25
 
-__version__ = (0,0,0,1)
+__version__ = (0,0,0,2)
 
 import tornado.ioloop
 import tornado.web
@@ -13,9 +13,7 @@ import re
 import json
 import inspect
 import sys
-import ipdb
 import session
-
 
 def config(func, method, path, **kwparams):
     """ Decorator config function """
@@ -57,10 +55,10 @@ def delete(path, *params, **kwparams):
     return method
 
 
-class RestService(tornado.web.Application):
+class RestService(session.SessionApplication):
     """ Class to create Rest services in tornado web server """
-
-    def __init__(self, rest_handlers, session_configs, resource=None, handlers=None, **settings):
+    def __init__(self, rest_handlers, session_configs, resource=None,
+                 handlers=None, *args, **kwargs):
         restservices = []
         self.resource = resource
         for r in rest_handlers:
@@ -68,8 +66,8 @@ class RestService(tornado.web.Application):
             restservices += svs
         if handlers != None:
             restservices += handlers
-        tornado.web.Application.__init__(self, restservices, **settings)
-        self.session_manager = session.SessionManager(session_configs)
+        session.SessionApplication.__init__(self, session_configs,
+                                    handlers = restservices, *args, **kwargs)
 
     def _generateRestServices(self,rest):
         svs = []
@@ -80,11 +78,7 @@ class RestService(tornado.web.Application):
             svs.append((o,rest,self.resource))
         return svs
 
-class RestHandler(tornado.web.RequestHandler):
-    def __init__(self, *argc, **argkw):
-        super().__init__(*argc, **argkw)
-        self.session = session.Session(self.application.session_manager, self)
-
+class RestHandler(session.SessionHandler):
     def get(self):
         """ Executes get method """
         self._exe('GET')
