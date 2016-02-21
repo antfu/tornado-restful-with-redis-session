@@ -59,8 +59,8 @@ class Session(SessionData):
         self.session_id = current_session.session_id
         self.hmac_key = current_session.hmac_key
 
-    def save(self,timeout = None):
-        self.session_manager.set(self.request_handler, self, timeout)
+    def save(self, expires = None):
+        self.session_manager.set(self.request_handler, self, expires)
 
     def clear(self):
         self.session_manager.clear(self.request_handler)
@@ -71,14 +71,23 @@ class SessionManager(object):
         self.secret = configs['session_secret']
         self.session_timeout = configs['session_timeout']
 
-        if configs['storage']['agent'] == 'redis':
+        self.storage = self._get_storage(**configs['storage'])
+
+    def _get_storage(self, agent='auto',redis_host='localhost',redis_port=6379,redis_pass=None):
+        if agent == 'auto':
+            try:
+                storage = self._get_storage('redis',redis_host,redis_port,redis_pass)
+            except Exception as e:
+                storage = self._get_storage('dict')
+        elif agent == 'redis':
             import redis
             redis_connect = redis.StrictRedis(
-                    host=configs['storage']['redis_host'],
-                    port=configs['storage']['redis_port'],
-                    password=configs['storage']['redis_pass']
+                    host=redis_host,
+                    port=redis_port,
+                    password=redis_pass
                 )
-            self.storage = {
+            storage = {
+                'media': 'redis',
                 'storage': redis_connect,
                 'get': lambda _id: redis_connect.get(_id),
                 'set': lambda _id,timeout,data: redis_connect.setex(_id,timeout,data)
@@ -95,11 +104,14 @@ class SessionManager(object):
             def dict_set(dic,k,timeout,v):
                 dic[k] = (int(time.time() + timeout * 60),v)
             dict_storage = {}
-            self.storage = {
+            storage = {
+                'media': 'dict',
                 'storage': dict_storage,
                 'get': lambda _id: dict_get(dict_storage,_id),
                 'set': lambda _id,timeout,data: dict_set(dict_storage,_id,timeout,data)
-             }
+            }
+        return storage
+
 
     def _fetch(self, session_id):
         try:
@@ -143,14 +155,13 @@ class SessionManager(object):
                 session[key] = data
         return session
 
-    def set(self, request_handler, session, timeout = None):
-        if timeout is None: timeout = self.session_timeout
-        request_handler.set_secure_cookie("session_id", session.session_id)
-        request_handler.set_secure_cookie("verification", session.hmac_key)
+    def set(self, request_handler, session, expires = None):
+        request_handler.set_secure_cookie("session_id", session.session_id, expires_days = expires)
+        request_handler.set_secure_cookie("verification", session.hmac_key, expires_days = expires)
 
         session_data = ujson.dumps(dict(session.items()))
 
-        self.storage['set'](session.session_id, timeout, session_data)
+        self.storage['set'](session.session_id, self.session_timeout, session_data)
 
     def clear(self, request_handler):
         request_handler.clear_cookie("session_id")
